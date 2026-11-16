@@ -2069,33 +2069,7 @@ class lennox_system(object):
             # so the unit that was not specified is converted from the one that was, or when neither was specified
             # it is copied from the current period.
             if self.single_setpoint_mode is False:
-                if hsp is not None:
-                    t_hsp = self.faren_round(hsp)
-                elif hspC is not None:
-                    t_hsp = self.convertCtoF(hspC)
-                else:
-                    t_hsp = period.hsp
-
-                if hspC is not None:
-                    t_hspC = self.celsius_round(hspC)
-                elif hsp is not None:
-                    t_hspC = self.convertFtoC(hsp)
-                else:
-                    t_hspC = period.hspC
-
-                if csp is not None:
-                    t_csp = self.faren_round(csp)
-                elif cspC is not None:
-                    t_csp = self.convertCtoF(cspC)
-                else:
-                    t_csp = period.csp
-
-                if cspC is not None:
-                    t_cspC = self.celsius_round(cspC)
-                elif csp is not None:
-                    t_cspC = self.convertFtoC(csp)
-                else:
-                    t_cspC = period.cspC
+                t_hsp, t_hspC, t_csp, t_cspC = self._resolve_dual_setpoints(hsp, hspC, csp, cspC, period)
 
                 # Lennox requires the heat and cool setpoints be seperated by 1.5C/3F. Unlike the zone setpoints
                 # we do not adjust the other setpoint, because a schedule period is not necessarily the one running.
@@ -2121,15 +2095,8 @@ class lennox_system(object):
                 if t_cspC is not None:
                     t_period["cspC"] = t_cspC
             else:
-                if sp is not None:
-                    t_period["sp"] = self.faren_round(sp)
-                elif spC is not None:
-                    t_period["sp"] = self.convertCtoF(spC)
-
-                if spC is not None:
-                    t_period["spC"] = self.celsius_round(spC)
-                elif sp is not None:
-                    t_period["spC"] = self.convertFtoC(sp)
+                # hsp/hspC/csp/cspC were rejected above in this mode, so sp or spC was given and both are filled in.
+                t_period["sp"], t_period["spC"] = self._resolve_setpoint_pair(sp, spC)
 
         if humidityMode is not None:
             t_period["humidityMode"] = humidityMode
@@ -2191,6 +2158,37 @@ class lennox_system(object):
             EC_BAD_PARAMETERS,
             2,
         )
+
+    def _resolve_setpoint_pair(self, f, c, current_f=None, current_c=None) -> tuple:
+        """Returns the (fahrenheit, celsius) pair to send for one setpoint.
+
+        The thermostat stores fahrenheit and celsius independently, so each unit is the value
+        given, else converted from the other unit, else the current value.
+        """
+        if f is not None:
+            t_f = self.faren_round(f)
+        elif c is not None:
+            t_f = self.convertCtoF(c)
+        else:
+            t_f = current_f
+
+        if c is not None:
+            t_c = self.celsius_round(c)
+        elif f is not None:
+            t_c = self.convertFtoC(f)
+        else:
+            t_c = current_c
+        return t_f, t_c
+
+    def _resolve_dual_setpoints(self, hsp, hspC, csp, cspC, current) -> tuple:
+        """Returns (hsp, hspC, csp, cspC) to send, filling in what was not given from current.
+
+        current is any object with hsp, hspC, csp and cspC attributes, such as a lennox_zone
+        or a lennox_period. Deadband checking is left to the caller.
+        """
+        t_hsp, t_hspC = self._resolve_setpoint_pair(hsp, hspC, current.hsp, current.hspC)
+        t_csp, t_cspC = self._resolve_setpoint_pair(csp, cspC, current.csp, current.cspC)
+        return t_hsp, t_hspC, t_csp, t_cspC
 
     def getOrCreateZone(self, zone_id):
         zone = self.getZone(zone_id)
@@ -2920,37 +2918,7 @@ class lennox_zone(object):
         # When in this mode, the lennox app always sends hsp,hspC,csp and cspC in the message.  The code fills
         # in the parameters by either converting faren to celsius or by copying the current setpoint value from the zone
         if self.system.single_setpoint_mode is False:
-            if r_hsp is not None:
-                hsp = self.system.faren_round(r_hsp)
-            else:
-                if r_hspC is not None:
-                    hsp = self.system.convertCtoF(r_hspC)
-                else:
-                    hsp = self.hsp
-
-            if r_hspC is not None:
-                hspC = self.system.celsius_round(r_hspC)
-            else:
-                if r_hsp is not None:
-                    hspC = self.system.convertFtoC(r_hsp)
-                else:
-                    hspC = self.hspC
-
-            if r_csp is not None:
-                csp = self.system.faren_round(r_csp)
-            else:
-                if r_cspC is not None:
-                    csp = self.system.convertCtoF(r_cspC)
-                else:
-                    csp = self.csp
-
-            if r_cspC is not None:
-                cspC = self.system.celsius_round(r_cspC)
-            else:
-                if r_csp is not None:
-                    cspC = self.system.convertFtoC(r_csp)
-                else:
-                    cspC = self.cspC
+            hsp, hspC, csp, cspC = self.system._resolve_dual_setpoints(r_hsp, r_hspC, r_csp, r_cspC, self)
 
             # Lennox requires the heat and cool setpoints be seperated by 1.5C/3F.
             # Even if the zone is just in heat or cool mode. The lennox app automatically
@@ -2974,15 +2942,7 @@ class lennox_zone(object):
             if modified:
                 _LOGGER.debug(f"setpoints modified id [{self.id}] hsp [{hsp}] hspC [{hspC}] csp [{csp}] cspC [{cspC}]")
         else:
-            if r_sp is not None:
-                sp = self.system.faren_round(r_sp)
-            elif r_spC is not None:
-                sp = self.system.convertCtoF(r_spC)
-
-            if r_spC is not None:
-                spC = self.system.celsius_round(r_spC)
-            elif r_sp is not None:
-                spC = self.system.convertFtoC(r_sp)
+            sp, spC = self.system._resolve_setpoint_pair(r_sp, r_spC)
 
         await self._execute_setpoints(hsp=hsp, hspC=hspC, csp=csp, cspC=cspC, sp=sp, spC=spC)
 
