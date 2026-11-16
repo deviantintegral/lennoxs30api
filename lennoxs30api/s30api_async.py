@@ -127,6 +127,11 @@ HVAC_MODE_TARGETS: Final = {"fanMode", "systemMode", "humidityMode"}
 
 LENNOX_MANUAL_MODE_SCHEDULE_START_INDEX: int = 16
 
+# Schedule slots 5 - 15 arrive with no schedule object at all, not even a name. The S30 panel
+# offers no way to create a schedule in them, so this library does not support it either.
+LENNOX_EMPTY_SCHEDULE_START_INDEX: Final = 5
+LENNOX_EMPTY_SCHEDULE_END_INDEX: Final = 15
+
 # Schedule period startTimes are seconds since the start of the week, so a 28 period schedule is
 # 4 periods a day for 7 days and period.id is day * 4 + period.
 LENNOX_SCHEDULE_PERIODS_PER_DAY: Final = 4
@@ -1986,21 +1991,7 @@ class lennox_system(object):
         _LOGGER.debug(
             f"lennox_system:set_schedule_period sysid [{self.sysId}] schedule_id [{scheduleId}] period_id [{periodId}] startTime [{startTime}] enabled [{enabled}] hsp [{hsp}] hspC [{hspC}] csp [{csp}] cspC [{cspC}] sp [{sp}] spC [{spC}] single_setpoint_mode [{self.single_setpoint_mode}] husp [{husp}] desp [{desp}] fanMode [{fanMode}] systemMode [{systemMode}] humidityMode [{humidityMode}]"
         )
-        schedule = self.getSchedule(scheduleId)
-        if schedule is None:
-            # Schedule slots 5 - 15 arrive with no schedule object at all, not even a name. The S30 panel
-            # offers no way to create a schedule in them, so this library does not support it either.
-            if 5 <= scheduleId <= 15:
-                raise S30Exception(
-                    f"set_schedule_period - schedule [{scheduleId}] is an empty slot, schedules cannot be created in slots 5 - 15",
-                    EC_BAD_PARAMETERS,
-                    1,
-                )
-            raise S30Exception(
-                f"set_schedule_period - unknown schedule [{scheduleId}] sysid [{self.sysId}]",
-                EC_BAD_PARAMETERS,
-                2,
-            )
+        schedule = self._get_schedule_or_raise(scheduleId, "set_schedule_period")
 
         period: lennox_period = schedule.getPeriod(periodId)
         if period is None:
@@ -2170,19 +2161,7 @@ class lennox_system(object):
                 schedule is an empty slot (5 - 15), or the name is empty.
         """
         _LOGGER.info(f"lennox_system:set_schedule_name sysid [{self.sysId}] schedule_id [{scheduleId}] name [{name}]")
-        schedule = self.getSchedule(scheduleId)
-        if schedule is None:
-            if 5 <= scheduleId <= 15:
-                raise S30Exception(
-                    f"set_schedule_name - schedule [{scheduleId}] is an empty slot, schedules cannot be created in slots 5 - 15",
-                    EC_BAD_PARAMETERS,
-                    1,
-                )
-            raise S30Exception(
-                f"set_schedule_name - unknown schedule [{scheduleId}] sysid [{self.sysId}]",
-                EC_BAD_PARAMETERS,
-                2,
-            )
+        self._get_schedule_or_raise(scheduleId, "set_schedule_name")
         if name is None or len(name) == 0:
             raise S30Exception(
                 f"set_schedule_name - a name must be specified for schedule [{scheduleId}]",
@@ -2193,6 +2172,25 @@ class lennox_system(object):
         # setpoint messages do.
         command = {"schedules": [{"schedule": {"name": name}, "id": scheduleId}]}
         await self.api.publish_message_helper_dict(self.sysId, command)
+
+    def _get_schedule_or_raise(self, scheduleId, caller: str) -> lennox_schedule:
+        """Returns the schedule, or raises S30Exception with EC_BAD_PARAMETERS reference 1 when it
+        is an empty slot (5 - 15) and reference 2 when it is otherwise unknown."""
+        schedule = self.getSchedule(scheduleId)
+        if schedule is not None:
+            return schedule
+        if LENNOX_EMPTY_SCHEDULE_START_INDEX <= scheduleId <= LENNOX_EMPTY_SCHEDULE_END_INDEX:
+            raise S30Exception(
+                f"{caller} - schedule [{scheduleId}] is an empty slot, schedules cannot be created in slots "
+                f"{LENNOX_EMPTY_SCHEDULE_START_INDEX} - {LENNOX_EMPTY_SCHEDULE_END_INDEX}",
+                EC_BAD_PARAMETERS,
+                1,
+            )
+        raise S30Exception(
+            f"{caller} - unknown schedule [{scheduleId}] sysid [{self.sysId}]",
+            EC_BAD_PARAMETERS,
+            2,
+        )
 
     def getOrCreateZone(self, zone_id):
         zone = self.getZone(zone_id)
