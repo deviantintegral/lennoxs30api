@@ -560,3 +560,30 @@ async def test_set_dehumidify_setpoint(api_single_setpoint: s30api_async):
         ex: S30Exception = exc.value
         assert ex.error_code == EC_BAD_PARAMETERS
         assert mock_message_helper.call_count == 0
+
+
+def test_validate_setpoint_ranges_messages(api: s30api_async, api_single_setpoint: s30api_async):
+    """Test the range errors name the limit that was checked and show its value"""
+    zone: lennox_zone = api.system_list[0].getZone(0)
+    assert (zone.minHsp, zone.maxHsp, zone.minCsp, zone.maxCsp) == (40, 90, 60, 99)
+    assert (zone.minHspC, zone.maxHspC, zone.minCspC, zone.maxCspC) == (4.5, 32, 15.5, 37)
+
+    with pytest.raises(S30Exception) as exc:
+        zone.validate_setpoint_ranges(r_hsp=39)
+    assert exc.value.error_code == EC_BAD_PARAMETERS
+    assert "minHsp [40]" in exc.value.message
+
+    with pytest.raises(S30Exception) as exc:
+        zone.validate_setpoint_ranges(r_hspC=4)
+    assert "minHspC [4.5]" in exc.value.message
+
+    # the single setpoint range runs from the lowest heat setpoint to the highest cool setpoint
+    zone = api_single_setpoint.system_list[0].getZone(0)
+    with pytest.raises(S30Exception) as exc:
+        zone.validate_setpoint_ranges(r_sp=100)
+    assert exc.value.message.startswith("setHeatCoolSPF")
+    assert "between [40] and [99]" in exc.value.message
+
+    with pytest.raises(S30Exception) as exc:
+        zone.validate_setpoint_ranges(r_spC=37.5)
+    assert "between [4.5] and [37]" in exc.value.message

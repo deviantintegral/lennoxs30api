@@ -2897,7 +2897,7 @@ class lennox_zone(object):
             )
         if r_hsp is not None and r_hsp < self.minHsp:
             raise S30Exception(
-                f"setHeatCoolSPF r_hsp [{r_hsp}] must be greater than minCsp [{self.minHsp}]",
+                f"setHeatCoolSPF r_hsp [{r_hsp}] must be greater than minHsp [{self.minHsp}]",
                 EC_BAD_PARAMETERS,
                 3,
             )
@@ -2922,7 +2922,7 @@ class lennox_zone(object):
             )
         if r_hspC is not None and r_hspC < self.minHspC:
             raise S30Exception(
-                f"setHeatCoolSPC r_hspC [{r_hspC}] must be greater than minCspC [{self.minHspC}]",
+                f"setHeatCoolSPC r_hspC [{r_hspC}] must be greater than minHspC [{self.minHspC}]",
                 EC_BAD_PARAMETERS,
                 3,
             )
@@ -2935,14 +2935,14 @@ class lennox_zone(object):
 
         if r_sp is not None and (r_sp > self.maxCsp or r_sp < self.minHsp):
             raise S30Exception(
-                f"setHeatCoolSPC r_sp [{r_sp}] must be between [{self.minHsp}] and [{self.maxHsp}]",
+                f"setHeatCoolSPF r_sp [{r_sp}] must be between [{self.minHsp}] and [{self.maxCsp}]",
                 EC_BAD_PARAMETERS,
                 2,
             )
 
         if r_spC is not None and (r_spC > self.maxCspC or r_spC < self.minHspC):
             raise S30Exception(
-                f"setHeatCoolSPC r_spC [{r_spC}] must be between [{self.minHspC}] and [{self.maxHspC}]",
+                f"setHeatCoolSPC r_spC [{r_spC}] must be between [{self.minHspC}] and [{self.maxCspC}]",
                 EC_BAD_PARAMETERS,
                 2,
             )
