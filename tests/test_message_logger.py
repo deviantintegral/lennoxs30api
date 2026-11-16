@@ -108,7 +108,7 @@ def test_logging_redacted_performance(caplog):
 
 
 def test_logger_instances_separate():
-    """Tests the multiple API instances use seperate logfiles"""
+    """Tests the multiple API instances use separate logfiles"""
     # Message Loggers are unique per file.  So when specifying different files we should get different loggers
     mlog1 = MessageLogger(enabled=True, message_logging_file="s30_log_file_1.tmp")
     mlog2 = MessageLogger(enabled=True, message_logging_file="s30_log_file_2.tmp")

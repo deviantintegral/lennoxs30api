@@ -370,7 +370,7 @@ async def test_set_schedule_period_wrong_setpoint_mode(api: s30api_async, api_si
 
 @pytest.mark.asyncio
 async def test_set_schedule_period_deadband(api: s30api_async):
-    """Test the heat and cool setpoints must be seperated by the deadband"""
+    """Test the heat and cool setpoints must be separated by the deadband"""
     lsystem: lennox_system = api.system_list[0]
     assert lsystem.changeover_temp_deadband_f == 3
     assert lsystem.changeover_temp_deadband_c == 1.5

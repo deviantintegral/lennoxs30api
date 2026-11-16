@@ -235,7 +235,7 @@ LENNOX_BLE_STATUS_INPUT_AVAILABLE: Final = "0"
 LENNOX_PRODUCT_TYPE_S40: Final = "S40"
 LENNOX_PRODUCT_TYPE_S30: Final = "S30"
 
-# Lennox heat and cool setpoints must be seperated by 3 F or 1.5 C
+# Lennox heat and cool setpoints must be separated by 3 F or 1.5 C
 LENNOX_HSP_CSP_SEP_DEFAULT = 3
 LENNOX_HSPC_CSPC_SEP_DEFAULT = 1.5
 
@@ -2085,17 +2085,17 @@ class lennox_system(object):
             if self.single_setpoint_mode is False:
                 t_hsp, t_hspC, t_csp, t_cspC = self._resolve_dual_setpoints(hsp, hspC, csp, cspC, period)
 
-                # Lennox requires the heat and cool setpoints be seperated by 1.5C/3F. Unlike the zone setpoints
+                # Lennox requires the heat and cool setpoints be separated by 1.5C/3F. Unlike the zone setpoints
                 # we do not adjust the other setpoint, because a schedule period is not necessarily the one running.
                 if t_hsp is not None and t_csp is not None and t_csp < t_hsp + self.changeover_temp_deadband_f:
                     raise S30Exception(
-                        f"set_schedule_period - hsp [{t_hsp}] and csp [{t_csp}] must be seperated by [{self.changeover_temp_deadband_f}] degrees",
+                        f"set_schedule_period - hsp [{t_hsp}] and csp [{t_csp}] must be separated by [{self.changeover_temp_deadband_f}] degrees",
                         EC_BAD_PARAMETERS,
                         11,
                     )
                 if t_hspC is not None and t_cspC is not None and t_cspC < t_hspC + self.changeover_temp_deadband_c:
                     raise S30Exception(
-                        f"set_schedule_period - hspC [{t_hspC}] and cspC [{t_cspC}] must be seperated by [{self.changeover_temp_deadband_c}] degrees",
+                        f"set_schedule_period - hspC [{t_hspC}] and cspC [{t_cspC}] must be separated by [{self.changeover_temp_deadband_c}] degrees",
                         EC_BAD_PARAMETERS,
                         12,
                     )
@@ -2901,14 +2901,14 @@ class lennox_zone(object):
 
         if r_hsp and r_csp and r_csp < r_hsp + self.system.changeover_temp_deadband_f:
             raise S30Exception(
-                f"validate_setpoints r_hsp [{r_hsp}] and r_csp [{r_csp}] must be seperated by [{self.system.changeover_temp_deadband_f}] degrees",
+                f"validate_setpoints r_hsp [{r_hsp}] and r_csp [{r_csp}] must be separated by [{self.system.changeover_temp_deadband_f}] degrees",
                 EC_BAD_PARAMETERS,
                 3,
             )
 
         if r_hspC and r_cspC and r_cspC < r_hspC + self.system.changeover_temp_deadband_c:
             raise S30Exception(
-                f"validate_setpoints r_hspC [{r_hspC}] and r_csp [{r_cspC}] must be seperated by [{self.system.changeover_temp_deadband_c}] degrees",
+                f"validate_setpoints r_hspC [{r_hspC}] and r_csp [{r_cspC}] must be separated by [{self.system.changeover_temp_deadband_c}] degrees",
                 EC_BAD_PARAMETERS,
                 3,
             )
@@ -2934,7 +2934,7 @@ class lennox_zone(object):
         if self.system.single_setpoint_mode is False:
             hsp, hspC, csp, cspC = self.system._resolve_dual_setpoints(r_hsp, r_hspC, r_csp, r_cspC, self)
 
-            # Lennox requires the heat and cool setpoints be seperated by 1.5C/3F.
+            # Lennox requires the heat and cool setpoints be separated by 1.5C/3F.
             # Even if the zone is just in heat or cool mode. The lennox app automatically
             # adjusts the setpoints, we will do the same. If both heat and cool setpoints
             # are specified the validation logic will have rejected them already.
