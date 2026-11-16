@@ -391,6 +391,113 @@ async def test_set_schedule_period_deadband(api: s30api_async):
 
 
 @pytest.mark.asyncio
+async def test_set_schedule_period_setpoint_ranges(api: s30api_async):
+    """Test temperature setpoints must be within the zone limits"""
+    lsystem: lennox_system = api.system_list[0]
+    zone = lsystem.getZone(0)
+    assert (zone.minHsp, zone.maxHsp, zone.minCsp, zone.maxCsp) == (40, 90, 60, 99)
+    assert (zone.minHspC, zone.maxHspC, zone.minCspC, zone.maxCspC) == (4.5, 32, 15.5, 37)
+    bad_values = [
+        {"hsp": 39},
+        {"hsp": 91, "csp": 99},
+        {"csp": 59, "hsp": 50},
+        {"csp": 100},
+        {"hspC": 4},
+        {"hspC": 32.5, "cspC": 37},
+        {"cspC": 15, "hspC": 10},
+        {"cspC": 37.5},
+    ]
+    for values in bad_values:
+        with patch.object(api, "publishMessageHelper") as mock_message_helper:
+            with pytest.raises(S30Exception) as exc:
+                await lsystem.set_schedule_period(1, 4, **values)
+            ex: S30Exception = exc.value
+            assert ex.error_code == EC_BAD_PARAMETERS, values
+            assert ex.reference == 14, values
+            assert "zone [0]" in ex.message
+            assert mock_message_helper.call_count == 0
+
+    # the limits themselves are valid
+    for values in ({"hsp": 40, "csp": 99}, {"hspC": 4.5, "cspC": 37}, {"hsp": 90, "csp": 93}):
+        with patch.object(api, "publishMessageHelper") as mock_message_helper:
+            await lsystem.set_schedule_period(1, 4, **values)
+            assert mock_message_helper.call_count == 1, values
+
+
+@pytest.mark.asyncio
+async def test_set_schedule_period_setpoint_ranges_single_setpoint(api_single_setpoint: s30api_async):
+    """Test the single setpoint must be within the zone limits"""
+    lsystem: lennox_system = api_single_setpoint.system_list[0]
+    for values in ({"sp": 39}, {"sp": 100}, {"spC": 4}, {"spC": 37.5}):
+        with patch.object(api_single_setpoint, "publishMessageHelper") as mock_message_helper:
+            with pytest.raises(S30Exception) as exc:
+                await lsystem.set_schedule_period(1, 4, **values)
+            assert exc.value.reference == 14, values
+            assert mock_message_helper.call_count == 0
+
+    with patch.object(api_single_setpoint, "publishMessageHelper") as mock_message_helper:
+        await lsystem.set_schedule_period(1, 4, sp=70)
+        assert mock_message_helper.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_set_schedule_period_humidity_ranges(api: s30api_async):
+    """Test humidity setpoints must be within the zone limits"""
+    lsystem: lennox_system = api.system_list[0]
+    zone = lsystem.getZone(0)
+    assert (zone.minHumSp, zone.maxHumSp, zone.minDehumSp, zone.maxDehumSp) == (15, 45, 40, 60)
+    for values in ({"husp": 14}, {"husp": 46}, {"desp": 39}, {"desp": 61}):
+        with patch.object(api, "publishMessageHelper") as mock_message_helper:
+            with pytest.raises(S30Exception) as exc:
+                await lsystem.set_schedule_period(1, 4, **values)
+            assert exc.value.error_code == EC_BAD_PARAMETERS
+            assert exc.value.reference == 14, values
+            assert mock_message_helper.call_count == 0
+
+    with patch.object(api, "publishMessageHelper") as mock_message_helper:
+        await lsystem.set_schedule_period(1, 4, husp=15, desp=60)
+        assert mock_message_helper.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_set_schedule_period_ranges_every_zone(api: s30api_async):
+    """Test a setpoint must be within the limits of every enabled zone, since any zone can run the schedule"""
+    lsystem: lennox_system = api.system_list[0]
+    zone3 = lsystem.getZone(3)
+    assert zone3.is_zone_disabled is False
+    zone3.maxHsp = 70
+    with patch.object(api, "publishMessageHelper") as mock_message_helper:
+        # within zone 0's limits but not zone 3's
+        with pytest.raises(S30Exception) as exc:
+            await lsystem.set_schedule_period(1, 4, hsp=75, csp=80)
+        assert exc.value.reference == 14
+        assert "zone [3]" in exc.value.message
+        assert mock_message_helper.call_count == 0
+
+    # disabled zones are not checked
+    lsystem.zoningMode = "central"
+    assert zone3.is_zone_disabled is True
+    with patch.object(api, "publishMessageHelper") as mock_message_helper:
+        await lsystem.set_schedule_period(1, 4, hsp=75, csp=80)
+        assert mock_message_helper.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_set_schedule_period_ranges_zone_without_limits(api_m30: s30api_async):
+    """Test zones whose limits have not arrived are skipped rather than failing"""
+    lsystem: lennox_system = api_m30.system_list[0]
+    zone1 = lsystem.getZone(1)
+    assert zone1.minHsp is None
+    assert zone1.minHumSp is None
+    # make the zone count as enabled so only the missing limits keep it from being checked
+    lsystem.zoningMode = "zoned"
+    assert zone1.is_zone_disabled is False
+    with patch.object(api_m30, "publishMessageHelper") as mock_message_helper:
+        await lsystem.set_schedule_period(1, 4, hsp=62, csp=75, husp=40, desp=50)
+        assert mock_message_helper.call_count == 1
+
+
+@pytest.mark.asyncio
 async def test_set_schedule_name(api: s30api_async):
     """Test renaming a schedule"""
     lsystem: lennox_system = api.system_list[0]

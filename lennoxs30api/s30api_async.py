@@ -1956,8 +1956,9 @@ class lennox_system(object):
         """Update one period of a schedule.
 
         Only the values that are passed are changed; everything else in the period
-        is left as it is. At least one value must be passed. Setpoints are not range
-        checked, so make sure the values are valid for the equipment.
+        is left as it is. At least one value must be passed. Any zone can run a
+        schedule, so setpoints that are passed must be within the limits of every
+        enabled zone.
 
         The thermostat stores Fahrenheit and Celsius setpoints separately. When only
         one unit is passed, the other is converted from it. When a setpoint is not
@@ -1988,7 +1989,8 @@ class lennox_system(object):
             S30Exception: With EC_BAD_PARAMETERS when the schedule or period does not
                 exist, the schedule is an empty slot (5 - 15), nothing is passed to set,
                 a mode or startTime is invalid, setpoints do not match the system's
-                setpoint mode, or the heating and cooling setpoints are too close.
+                setpoint mode, the heating and cooling setpoints are too close, or a
+                setpoint is outside a zone's limits.
         """
         _LOGGER.debug(
             f"lennox_system:set_schedule_period sysid [{self.sysId}] schedule_id [{scheduleId}] period_id [{periodId}] startTime [{startTime}] enabled [{enabled}] hsp [{hsp}] hspC [{hspC}] csp [{csp}] cspC [{cspC}] sp [{sp}] spC [{spC}] single_setpoint_mode [{self.single_setpoint_mode}] husp [{husp}] desp [{desp}] fanMode [{fanMode}] systemMode [{systemMode}] humidityMode [{humidityMode}]"
@@ -2069,8 +2071,10 @@ class lennox_system(object):
                 EC_BAD_PARAMETERS,
                 10,
             )
+        self._validate_schedule_setpoint_ranges(
+            "set_schedule_period", hsp=hsp, hspC=hspC, csp=csp, cspC=cspC, sp=sp, spC=spC, husp=husp, desp=desp
+        )
 
-        ### No range checking of the setpoints in this routine, make sure you know what you are setting.
         t_period = {}
         if startTime is not None:
             t_period["startTime"] = int(startTime)
@@ -2172,6 +2176,32 @@ class lennox_system(object):
             EC_BAD_PARAMETERS,
             2,
         )
+
+    def _validate_schedule_setpoint_ranges(
+        self, caller: str, hsp=None, hspC=None, csp=None, cspC=None, sp=None, spC=None, husp=None, desp=None
+    ) -> None:
+        """Raises S30Exception with EC_BAD_PARAMETERS reference 14 when a setpoint is outside the limits
+        of any enabled zone, since any zone can run a schedule.
+
+        Zones whose limits have not arrived in a config message yet are skipped rather than failing on None.
+        """
+        for zone in self.zone_list:
+            if zone.is_zone_disabled:
+                continue
+            try:
+                # The temperature limits arrive together in the zone config, as do each pair of humidity limits.
+                if zone.minHsp is not None:
+                    zone.validate_setpoint_ranges(r_hsp=hsp, r_hspC=hspC, r_csp=csp, r_cspC=cspC, r_sp=sp, r_spC=spC)
+                zone.validate_humidity_setpoint_ranges(
+                    r_husp=husp if zone.minHumSp is not None else None,
+                    r_desp=desp if zone.minDehumSp is not None else None,
+                )
+            except S30Exception as ex:
+                raise S30Exception(
+                    f"{caller} - setpoint is outside the limits of zone [{zone.id}] - {ex.message}",
+                    EC_BAD_PARAMETERS,
+                    14,
+                ) from ex
 
     def _resolve_setpoint_pair(self, f, c, current_f=None, current_c=None) -> tuple:
         """Returns the (fahrenheit, celsius) pair to send for one setpoint.
@@ -2835,6 +2865,24 @@ class lennox_zone(object):
                 2,
             )
 
+        self.validate_setpoint_ranges(r_hsp=r_hsp, r_hspC=r_hspC, r_csp=r_csp, r_cspC=r_cspC, r_sp=r_sp, r_spC=r_spC)
+
+        if r_hsp and r_csp and r_csp < r_hsp + self.system.changeover_temp_deadband_f:
+            raise S30Exception(
+                f"validate_setpoints r_hsp [{r_hsp}] and r_csp [{r_csp}] must be separated by [{self.system.changeover_temp_deadband_f}] degrees",
+                EC_BAD_PARAMETERS,
+                3,
+            )
+
+        if r_hspC and r_cspC and r_cspC < r_hspC + self.system.changeover_temp_deadband_c:
+            raise S30Exception(
+                f"validate_setpoints r_hspC [{r_hspC}] and r_csp [{r_cspC}] must be separated by [{self.system.changeover_temp_deadband_c}] degrees",
+                EC_BAD_PARAMETERS,
+                3,
+            )
+
+    def validate_setpoint_ranges(self, r_hsp=None, r_hspC=None, r_csp=None, r_cspC=None, r_sp=None, r_spC=None):
+        """Raises S30Exception with EC_BAD_PARAMETERS when a setpoint that is passed is outside this zone's limits."""
         if r_csp is not None and r_csp < self.minCsp:
             raise S30Exception(
                 f"setHeatCoolSPF r_csp [{r_csp}] must be greater than minCsp [{self.minCsp}]",
@@ -2897,20 +2945,6 @@ class lennox_zone(object):
                 f"setHeatCoolSPC r_spC [{r_spC}] must be between [{self.minHspC}] and [{self.maxHspC}]",
                 EC_BAD_PARAMETERS,
                 2,
-            )
-
-        if r_hsp and r_csp and r_csp < r_hsp + self.system.changeover_temp_deadband_f:
-            raise S30Exception(
-                f"validate_setpoints r_hsp [{r_hsp}] and r_csp [{r_csp}] must be separated by [{self.system.changeover_temp_deadband_f}] degrees",
-                EC_BAD_PARAMETERS,
-                3,
-            )
-
-        if r_hspC and r_cspC and r_cspC < r_hspC + self.system.changeover_temp_deadband_c:
-            raise S30Exception(
-                f"validate_setpoints r_hspC [{r_hspC}] and r_csp [{r_cspC}] must be separated by [{self.system.changeover_temp_deadband_c}] degrees",
-                EC_BAD_PARAMETERS,
-                3,
             )
 
     async def perform_setpoint(self, r_hsp=None, r_hspC=None, r_csp=None, r_cspC=None, r_sp=None, r_spC=None):
@@ -3089,6 +3123,23 @@ class lennox_zone(object):
                 1,
             )
 
+        self.validate_humidity_setpoint_ranges(r_husp=r_husp, r_desp=r_desp)
+        if r_husp is not None:
+            husp = int(r_husp)
+        if r_desp is not None:
+            desp = int(r_desp)
+
+        # Humidity setpoints always target the manual mode schedule even if the
+        # zone is running a schedule.
+        await self.system.perform_schedule_setpoint(
+            zoneId=self.id,
+            scheduleId=self.getManualModeScheduleId(),
+            husp=husp,
+            desp=desp,
+        )
+
+    def validate_humidity_setpoint_ranges(self, r_husp: int = None, r_desp: int = None):
+        """Raises S30Exception with EC_BAD_PARAMETERS when a humidity setpoint that is passed is outside this zone's limits."""
         if r_husp is not None:
             husp = int(r_husp)
             if husp > self.maxHumSp or husp < self.minHumSp:
@@ -3106,15 +3157,6 @@ class lennox_zone(object):
                     EC_BAD_PARAMETERS,
                     2,
                 )
-
-        # Humidity setpoints always target the manual mode schedule even if the
-        # zone is running a schedule.
-        await self.system.perform_schedule_setpoint(
-            zoneId=self.id,
-            scheduleId=self.getManualModeScheduleId(),
-            husp=husp,
-            desp=desp,
-        )
 
     async def setScheduleHold(self, hold: bool) -> bool:
         if hold is True:
