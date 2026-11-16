@@ -135,8 +135,10 @@ LENNOX_EMPTY_SCHEDULE_END_INDEX: Final = 15
 # Schedule period startTimes are seconds since the start of the week, so a 28 period schedule is
 # 4 periods a day for 7 days and period.id is day * 4 + period.
 LENNOX_SCHEDULE_PERIODS_PER_DAY: Final = 4
+LENNOX_SCHEDULE_DAYS_PER_WEEK: Final = 7
+LENNOX_SCHEDULE_PERIODS_PER_WEEK: Final = LENNOX_SCHEDULE_DAYS_PER_WEEK * LENNOX_SCHEDULE_PERIODS_PER_DAY
 LENNOX_SCHEDULE_SECONDS_PER_DAY: Final = 24 * 60 * 60
-LENNOX_SCHEDULE_SECONDS_PER_WEEK: Final = 7 * LENNOX_SCHEDULE_SECONDS_PER_DAY
+LENNOX_SCHEDULE_SECONDS_PER_WEEK: Final = LENNOX_SCHEDULE_DAYS_PER_WEEK * LENNOX_SCHEDULE_SECONDS_PER_DAY
 
 LENNOX_INDOOR_UNIT_FURNACE: Final = "furnace"
 LENNOX_INDOOR_UNIT_AIR_HANDLER: Final = "air handler"
@@ -2043,6 +2045,18 @@ class lennox_system(object):
                 EC_BAD_PARAMETERS,
                 8,
             )
+        # In a full week schedule period.id is day * 4 + period, so the start time must fall on that day.
+        # Passing seconds since midnight instead of since the start of the week fails this check.
+        if startTime is not None and schedule.periodCount == LENNOX_SCHEDULE_PERIODS_PER_WEEK:
+            period_day = periodId // LENNOX_SCHEDULE_PERIODS_PER_DAY
+            start_day = int(startTime) // LENNOX_SCHEDULE_SECONDS_PER_DAY
+            if period_day != start_day:
+                raise S30Exception(
+                    f"set_schedule_period - startTime [{startTime}] is on day [{start_day}] but period [{periodId}] is on day [{period_day}], "
+                    f"startTime must be between [{period_day * LENNOX_SCHEDULE_SECONDS_PER_DAY}] and [{(period_day + 1) * LENNOX_SCHEDULE_SECONDS_PER_DAY - 1}]",
+                    EC_BAD_PARAMETERS,
+                    13,
+                )
         if (sp is not None or spC is not None) and self.single_setpoint_mode is False:
             raise S30Exception(
                 "set_schedule_period - sp or spC can only be specified when system is in single setpoint mode",

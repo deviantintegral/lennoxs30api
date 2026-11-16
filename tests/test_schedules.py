@@ -302,9 +302,47 @@ async def test_set_schedule_period_bad_start_time(api: s30api_async):
         assert exc.value.reference == 8
         assert mock_message_helper.call_count == 0
 
-    # the last second of the week is valid
+    # the last second of the week is valid for a period on the last day
     with patch.object(api, "publishMessageHelper") as mock_message_helper:
-        await lsystem.set_schedule_period(1, 4, startTime=604799)
+        await lsystem.set_schedule_period(1, 27, startTime=604799)
+        assert mock_message_helper.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_set_schedule_period_start_time_wrong_day(api: s30api_async):
+    """Test the start time must fall on the period's day in a 28 period schedule"""
+    lsystem: lennox_system = api.system_list[0]
+    with patch.object(api, "publishMessageHelper") as mock_message_helper:
+        # period 4 is day 1, 21600 is 06:00 on day 0 - the seconds since midnight mistake
+        with pytest.raises(S30Exception) as exc:
+            await lsystem.set_schedule_period(1, 4, startTime=21600)
+        ex: S30Exception = exc.value
+        assert ex.error_code == EC_BAD_PARAMETERS
+        assert ex.reference == 13
+        assert "86400" in ex.message
+        assert "172799" in ex.message
+
+        # the first second of the next day
+        with pytest.raises(S30Exception) as exc:
+            await lsystem.set_schedule_period(1, 4, startTime=172800)
+        assert exc.value.reference == 13
+        assert mock_message_helper.call_count == 0
+
+    # both ends of the period's day are valid
+    for start_time in (86400, 172799):
+        with patch.object(api, "publishMessageHelper") as mock_message_helper:
+            await lsystem.set_schedule_period(1, 4, startTime=start_time)
+            assert mock_message_helper.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_set_schedule_period_start_time_short_schedule(api: s30api_async):
+    """Test the day check is skipped for schedules that are not 28 periods"""
+    lsystem: lennox_system = api.system_list[0]
+    schedule = lsystem.getSchedule(16)
+    assert schedule.periodCount != 28
+    with patch.object(api, "publishMessageHelper") as mock_message_helper:
+        await lsystem.set_schedule_period(16, 0, startTime=172800)
         assert mock_message_helper.call_count == 1
 
 
